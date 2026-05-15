@@ -105,7 +105,7 @@ class SpyreCausalLM(nn.Module):
             self.parallel_config
         )
 
-        if self.config.model_type in {"llama", "granite", "granitemoehybrid"}:
+        if self.config.model_type in {"llama", "granite", "granitemoehybrid", "granite41"}:
             self.kv_cache_specs["num_layers"] = self.config.num_hidden_layers
             self.kv_cache_specs["head_dim"] = getattr(
                 self.fms_model.config,
@@ -151,6 +151,28 @@ class SpyreCausalLM(nn.Module):
     ) -> None:
         logger.debug("Loading model weights for model %s", model_config.model)
         logger.debug("Model config has dtype: %s", model_config.dtype)
+
+        # DEV HACK: granite41 SWA sentinel — use FMS-native factory with random weights,
+        # skipping HF download / hf_pretrained dispatch.
+        if model_config.model == "granite41":
+            # Re-seed immediately before the factory call so random weights are
+            # reproducible against an out-of-process FMS reference run that does
+            # the same. (vLLM's worker.set_random_seed runs much earlier and the
+            # init code in between consumes random state.) Pass data_type and
+            # device_type explicitly so weight sampling matches the reference.
+            torch.manual_seed(model_config.seed or 0)
+            self.fms_model = get_model(
+                architecture="granite41",
+                variant="8b",
+                device_type="cpu",
+                data_type=self.dtype,
+                distributed_strategy=distributed_strategy,
+                group=dist.group.WORLD,
+                fused_weights=False,
+            )
+            self.fms_model.eval()
+            torch.set_grad_enabled(False)
+            return
 
         # When using quantized models, we might not be using the
         # model_config's dtype, hence we don't log the msg below
