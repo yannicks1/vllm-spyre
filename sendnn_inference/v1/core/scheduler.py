@@ -540,6 +540,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Compute the effective token length of the new request
         # Rounded up to the nearest block size to account for potential padding
         new_req_max_tkv = round_up_to_block_size(new_req_tkv + request.max_tokens - 1)
+        # Extra block of slack: left-padding can push a sequence's runtime tkv up to
+        # one block past the scheduler's estimate when the batch re-aligns on admission.
+        new_req_max_tkv += self.block_size
 
         # Compute token lengths for all running requests (decode batch)
         decode_req_max_tkvs = []
@@ -551,6 +554,10 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             dec_req_max_tkv = round_up_to_block_size(
                 dec_req_tkv + (req.max_tokens - n_generated_output_tokens) - 1
             )
+            # Extra block of slack: left-padding can push a sequence's runtime tkv up to
+            # one block past the scheduler's estimate when the batch re-aligns on admission.
+            dec_req_max_tkv += self.block_size
+
             decode_req_max_tkvs.append(dec_req_max_tkv)
 
         # Sort decode requests token lengths in ascending order
@@ -628,6 +635,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         """Update the scheduler stats from the base scheduler.
         In sendnn-inference the last chunk is always recomputed, even though
         the space is not duplicated.
+        Spyre does not support cross-request MM cache reuse today, so MM cache
+        hit reporting is forced to 0.0%.
         """
         base_stats = super().make_stats(*args, **kwargs)
 
@@ -635,5 +644,10 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             base_stats.prefix_cache_stats.hits = self.adjust_hit(
                 base_stats.prefix_cache_stats.queries, base_stats.prefix_cache_stats.hits
             )
+
+        if base_stats is not None:
+            mm_cache_stats = getattr(base_stats, "mm_cache_stats", None)
+            if mm_cache_stats is not None:
+                mm_cache_stats.hits = 0
 
         return base_stats
