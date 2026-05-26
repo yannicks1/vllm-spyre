@@ -533,7 +533,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         for req in running:
             if req.request_id == request.request_id:
-                # skip if the request is already in the running list because it has done some chunked prefills
+                # skip if the request is already in the running list
+                # (because it has done some chunked prefills)
                 continue
             num_tokens_to_compute = req.num_prompt_tokens + req.max_tokens - req.num_computed_tokens
             all_req_meta_data.append((req.num_computed_tokens, num_tokens_to_compute))
