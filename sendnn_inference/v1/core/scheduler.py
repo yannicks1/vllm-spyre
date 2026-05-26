@@ -525,6 +525,15 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         steps that result from combining the new sequence with the currently
         running decode batch.
 
+        Algorithm:
+        1. Collect (num_computed_tokens, num_tokens_to_compute) for the new
+           request and each running request.
+        2. Sort by num_tokens_to_compute ascending (next-to-finish first).
+        3. Iterate: at each step, compute the batch volume at the moment the
+           current shortest-remaining request finishes, as
+           batch_size * round_up_to_block_size(max(num_computed_tokens) +
+           finisher.num_tokens_to_compute), then pop it.
+        4. Return True iff the max batch volume seen stays within the limit.
         """
 
         # meta data: (num computed tokens, num tokens to compute)
